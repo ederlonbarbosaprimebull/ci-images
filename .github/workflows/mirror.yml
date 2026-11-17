@@ -1,0 +1,47 @@
+name: mirror
+# Copies official Docker Hub images to GHCR so CI pulls never hit the
+# anonymous Docker Hub rate limit. imagetools keeps every architecture and
+# the original digest.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+  push:
+    branches: [main]
+    paths: [".github/workflows/mirror.yml"]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - postgres:16
+          - postgres:16-alpine
+          - postgres:17
+          - postgres:18
+          - postgres:18-alpine
+          - redis:7
+          - redis:7-alpine
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: copy
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          docker buildx imagetools create \
+            --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE}" \
+            "docker.io/library/${IMAGE}"
+          docker buildx imagetools inspect "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE}" | head -3
